@@ -27,9 +27,16 @@ st.write(
 with st.sidebar:
     st.header("Premissas")
     item = st.text_input("Item (o que está sendo pleiteado)", value="Pleito/Negociação A")
+
     piso = st.number_input("A — Piso (R$)", min_value=0.0, value=300000.0, step=1000.0, format="%.2f")
-    provavel = st.number_input("B — Provável (R$)", min_value=float(piso), value=600000.0, step=1000.0, format="%.2f")
-    teto = st.number_input("C — Teto (R$)", min_value=float(provavel), value=950000.0, step=1000.0, format="%.2f")
+
+    # B nunca pode ser menor que A; valor padrão se ajusta dinamicamente
+    default_B = max(600000.0, float(piso))
+    provavel = st.number_input("B — Provável (R$)", min_value=float(piso), value=default_B, step=1000.0, format="%.2f")
+
+    # C nunca pode ser menor que B; valor padrão se ajusta dinamicamente
+    default_C = max(950000.0, float(provavel))
+    teto = st.number_input("C — Teto (R$)", min_value=float(provavel), value=default_C, step=1000.0, format="%.2f")
 
     iters = st.number_input("Iterações (≥ 10.000)", min_value=10000, value=20000, step=1000)
     seed = st.number_input("Seed (inteiro)", value=20251015, step=1)
@@ -43,9 +50,15 @@ with st.sidebar:
 
     rodar = st.button("🚀 Rodar simulação", use_container_width=True)
 
-# --------------- Validação --------------------
+# --------------- Validação/Blindagem --------------------
 def validar_triangular(a, b, c):
     return (a <= b) and (b <= c)
+
+# Blindagem extra para garantir consistência mesmo com mudanças rápidas
+if provavel < piso:
+    provavel = piso
+if teto < provavel:
+    teto = provavel
 
 if not validar_triangular(piso, provavel, teto):
     st.error("Triangular inválida: garanta A ≤ B ≤ C (piso ≤ provável ≤ teto).")
@@ -70,7 +83,7 @@ if rodar:
     # Probabilidade de sucesso vs. metas (opcionais/interpretativas)
     prob_meta = float((sorted_vals >= meta_valor).mean())  # P(Valor ≥ Meta)
     prob_ge_B = float((sorted_vals >= provavel).mean())    # P(Valor ≥ Provável)
-    prob_ge_A = float((sorted_vals >= piso).mean())        # P(Valor ≥ Piso) -> sempre 1.0 por definição
+    prob_ge_A = float((sorted_vals >= piso).mean())        # P(Valor ≥ Piso) -> deve ser 1.0
 
     duration_ms = int((time.perf_counter() - start) * 1000)
 
