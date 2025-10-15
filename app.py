@@ -1,189 +1,144 @@
-# app.py
-import time
-import json
-import hashlib
-import io
+# app.py — versão Exxata visual e explicativa
+import time, json, hashlib, io
+import numpy as np, pandas as pd, streamlit as st, matplotlib.pyplot as plt
 
-import numpy as np
-import pandas as pd
-import streamlit as st
-import matplotlib.pyplot as plt
+# ----------- Estilo e identidade visual Exxata -----------
+st.set_page_config(page_title="Simulação Monte Carlo – Exxata", layout="wide", page_icon="📈")
+st.markdown("""
+    <style>
+    html, body, [class*="css"]  {
+        font-family: 'Manrope', sans-serif !important;
+    }
+    h1,h2,h3,h4 { color: #4284D7 !important; }
+    .stMetricLabel { color: #78909C !important; }
+    .stMetricValue { color: #D51D07 !important; font-weight:700 !important; }
+    </style>
+""", unsafe_allow_html=True)
 
-# --------------- Config inicial ---------------
-st.set_page_config(
-    page_title="Monte Carlo – Pleitos/Negociações",
-    page_icon="📈",
-    layout="wide"
-)
-
+# ----------- Cabeçalho -----------
 st.title("📈 Simulação de Monte Carlo – Pleitos/Negociações (Triangular A/B/C)")
-st.write(
-    "Insira **A (piso)**, **B (provável)** e **C (teto)**. "
-    "A simulação usa **Triangular(A,B,C)** diretamente no valor a receber. "
-    "Mínimo de **10.000** iterações. A seção de auditoria comprova execução (n, seed, hash) e **nenhuma cancelada**."
+st.caption(
+    "O modelo estima o **resultado provável de uma negociação** considerando três cenários: "
+    "**Piso (A)** – valor mínimo esperado, **Provável (B)** – valor mediano, "
+    "e **Teto (C)** – limite máximo possível. "
+    "A simulação usa **distribuição triangular (A,B,C)** com 10.000+ iterações."
 )
 
-# --------------- Entradas ---------------------
+# ----------- Entradas -----------
 with st.sidebar:
-    st.header("Premissas")
-    item = st.text_input("Item (o que está sendo pleiteado)", value="Pleito/Negociação A")
+    st.header("Premissas do Cenário")
+    item = st.text_input("Item (pleito/negociação)", "Negociação A")
 
-    piso = st.number_input("A — Piso (R$)", min_value=0.0, value=300000.0, step=1000.0, format="%.2f")
+    piso = st.number_input("A — Piso (R$)", min_value=0.0, value=2_000_000.0, step=100_000.0, format="%.2f")
+    default_B = max(2_500_000.0, piso)
+    provavel = st.number_input("B — Provável (R$)", min_value=piso, value=default_B, step=100_000.0, format="%.2f")
+    default_C = max(3_500_000.0, provavel)
+    teto = st.number_input("C — Teto (R$)", min_value=provavel, value=default_C, step=100_000.0, format="%.2f")
 
-    # B nunca pode ser menor que A; valor padrão se ajusta dinamicamente
-    default_B = max(600000.0, float(piso))
-    provavel = st.number_input("B — Provável (R$)", min_value=float(piso), value=default_B, step=1000.0, format="%.2f")
-
-    # C nunca pode ser menor que B; valor padrão se ajusta dinamicamente
-    default_C = max(950000.0, float(provavel))
-    teto = st.number_input("C — Teto (R$)", min_value=float(provavel), value=default_C, step=1000.0, format="%.2f")
-
-    iters = st.number_input("Iterações (≥ 10.000)", min_value=10000, value=20000, step=1000)
-    seed = st.number_input("Seed (inteiro)", value=20251015, step=1)
+    iters = st.number_input("Iterações (≥10.000)", min_value=10_000, value=20_000, step=1_000)
+    seed = st.number_input("Seed aleatória", value=20251015, step=1)
 
     st.markdown("---")
-    st.caption("Opcional – Meta para análise de sucesso")
-    meta_valor = st.number_input(
-        "Meta (R$) – calc. prob. de atingir/exceder",
-        min_value=0.0, value=float(provavel), step=1000.0, format="%.2f"
-    )
+    st.caption("Análise de faixas de valor (opcional)")
+    faixa1 = st.number_input("Limite 1 (R$)", min_value=0.0, value=2_000_000.0, step=100_000.0)
+    faixa2 = st.number_input("Limite 2 (R$)", min_value=faixa1, value=3_000_000.0, step=100_000.0)
+    faixa3 = st.number_input("Limite 3 (R$)", min_value=faixa2, value=4_000_000.0, step=100_000.0)
 
     rodar = st.button("🚀 Rodar simulação", use_container_width=True)
 
-# --------------- Validação/Blindagem --------------------
-def validar_triangular(a, b, c):
-    return (a <= b) and (b <= c)
-
-# Blindagem extra para garantir consistência mesmo com mudanças rápidas
-if provavel < piso:
-    provavel = piso
-if teto < provavel:
-    teto = provavel
-
-if not validar_triangular(piso, provavel, teto):
-    st.error("Triangular inválida: garanta A ≤ B ≤ C (piso ≤ provável ≤ teto).")
-    st.stop()
-
-# --------------- Execução ---------------------
+# ----------- Execução Monte Carlo -----------
 if rodar:
     start = time.perf_counter()
-
     rng = np.random.default_rng(int(seed))
-    # numpy já tem triangular(min, mode, max, size)
-    valores = rng.triangular(left=piso, mode=provavel, right=teto, size=int(iters))
-
-    # Estatísticas
-    n = valores.size
+    valores = rng.triangular(piso, provavel, teto, size=int(iters))
     sorted_vals = np.sort(valores)
-    mean = float(sorted_vals.mean())
-    p5 = float(np.quantile(sorted_vals, 0.05))
-    p50 = float(np.quantile(sorted_vals, 0.50))
-    p95 = float(np.quantile(sorted_vals, 0.95))
 
-    # Probabilidade de sucesso vs. metas (opcionais/interpretativas)
-    prob_meta = float((sorted_vals >= meta_valor).mean())  # P(Valor ≥ Meta)
-    prob_ge_B = float((sorted_vals >= provavel).mean())    # P(Valor ≥ Provável)
-    prob_ge_A = float((sorted_vals >= piso).mean())        # P(Valor ≥ Piso) -> deve ser 1.0
+    n = len(valores)
+    mean, p50, p95 = np.mean(sorted_vals), np.quantile(sorted_vals, 0.5), np.quantile(sorted_vals, 0.95)
+    duration_ms = int((time.perf_counter() - start)*1000)
 
-    duration_ms = int((time.perf_counter() - start) * 1000)
+    # Probabilidades por faixa
+    pct_below_f1 = np.mean(sorted_vals < faixa1)
+    pct_f1_f2 = np.mean((sorted_vals >= faixa1) & (sorted_vals < faixa2))
+    pct_f2_f3 = np.mean((sorted_vals >= faixa2) & (sorted_vals < faixa3))
+    pct_above_f3 = np.mean(sorted_vals >= faixa3)
 
-    # Auditoria/meta
-    meta = {
-        "item": item,
-        "triangular": {"piso": piso, "provavel": provavel, "teto": teto},
-        "iterations": int(n),
-        "seed": int(seed),
-        "duration_ms": duration_ms,
-        "cancelled": 0
-    }
+    # Hash de auditoria (integridade)
+    meta = dict(item=item, piso=piso, provavel=provavel, teto=teto, iterations=n, seed=int(seed), duration_ms=duration_ms)
+    hash_str = json.dumps(meta, ensure_ascii=False).encode()
+    verification_hash = hashlib.sha256(hash_str).hexdigest().upper()
 
-    # Hash de verificação (premissas + amostra dos resultados)
-    sample = sorted_vals[:min(100, n)].tolist()
-    hash_input = json.dumps({"meta": meta, "sample": sample}, ensure_ascii=False).encode("utf-8")
-    verification_hash = hashlib.sha256(hash_input).hexdigest().upper()
+    # ----------- KPIs -----------
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("EV (média)", f"R$ {mean:,.0f}".replace(",","."))
+    c2.metric("P50 (Mediana)", f"R$ {p50:,.0f}".replace(",","."))
+    c3.metric("P95 (Cenário alto)", f"R$ {p95:,.0f}".replace(",","."))
+    c4.metric("Simulações", f"{n:,}".replace(",", "."))
 
-    # --------------- KPIs ---------------------
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    col1.metric("EV (média)", f"R$ {mean:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    col2.metric("P50 (mediana)", f"R$ {p50:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    col3.metric("P95", f"R$ {p95:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    col4.metric("Iterações", f"{n:,}".replace(",", "."))
-    col5.metric("Canceladas", "0")
-    col6.metric("Duração (ms)", f"{duration_ms}")
+    st.caption("**P50** representa o valor central (50% dos resultados são menores). "
+               "**P95** é o limite superior provável (95% dos resultados são menores).")
 
-    # --------------- Gráficos -----------------
-    left, right = st.columns(2)
-
-    # Histograma
+    # ----------- Distribuição ----------- 
+    left,right = st.columns([1,1])
     with left:
-        st.subheader("Distribuição de Resultado (R$)")
-        fig1 = plt.figure()
-        plt.hist(sorted_vals, bins=30)  # sem cores específicas
-        plt.axvline(p50, linestyle="--", label="P50")
-        plt.axvline(p95, linestyle=":", label="P95")
-        plt.xlabel("Valor simulado (R$)")
-        plt.ylabel("Frequência")
-        plt.legend()
-        st.pyplot(fig1, clear_figure=True)
+        st.subheader("📊 Distribuição de Resultados (R$)")
+        fig, ax = plt.subplots()
+        ax.hist(sorted_vals, bins=25, color="#D51D07", edgecolor="#B2B2BB")
+        ax.set_xlabel("Valor Simulado (R$)")
+        ax.set_ylabel("Frequência")
+        st.pyplot(fig, clear_figure=True)
 
-    # CDF empírica
     with right:
-        st.subheader("Curva Acumulada (CDF)")
-        y = np.linspace(0, 1, n, endpoint=True)
-        fig2 = plt.figure()
-        plt.plot(sorted_vals, y)  # sem cores específicas
-        plt.xlabel("Valor simulado (R$)")
-        plt.ylabel("Probabilidade acumulada")
+        st.subheader("📈 Curva Acumulada (CDF)")
+        y = np.linspace(0, 1, n)
+        fig2, ax2 = plt.subplots()
+        ax2.plot(sorted_vals, y, color="#4284D7")
+        ax2.set_xlabel("Valor (R$)")
+        ax2.set_ylabel("Probabilidade acumulada")
         st.pyplot(fig2, clear_figure=True)
 
-    # --------------- Probabilidades de "sucesso" -----------------
-    st.subheader("Análises de sucesso")
+    # ----------- Faixas de negociação -----------
+    st.markdown("### 🎯 Distribuição por Faixa de Acordo")
+    colA,colB = st.columns([1,1])
+    with colA:
+        st.write(f"**{pct_below_f1*100:.2f}%** para acordo abaixo de **{faixa1/1_000_000:.1f}MM**")
+        st.write(f"**{pct_f1_f2*100:.2f}%** para acordo entre **{faixa1/1_000_000:.1f}MM** e **{faixa2/1_000_000:.1f}MM**")
+        st.write(f"**{pct_f2_f3*100:.2f}%** para acordo entre **{faixa2/1_000_000:.1f}MM** e **{faixa3/1_000_000:.1f}MM**")
+        st.write(f"**{pct_above_f3*100:.2f}%** para acordo acima de **{faixa3/1_000_000:.1f}MM**")
+
+    # ----------- Auditoria explicativa -----------
+    st.markdown("### 🧾 Auditoria & Comprovação")
     st.write(
-        f"- **P(Valor ≥ Meta {meta_valor:,.2f})** = **{100*prob_meta:.2f}%**  \n"
-        f"- **P(Valor ≥ B (provável) {provavel:,.2f})** = **{100*prob_ge_B:.2f}%**  \n"
-        f"- **P(Valor ≥ A (piso) {piso:,.2f})** = **{100*prob_ge_A:.2f}%**"
+        f"Foram realizadas **{n:,} simulações** em {duration_ms} ms.\n\n"
+        "O **hash** é um código gerado automaticamente que serve como *carimbo digital* "
+        "do experimento: se alguém alterar qualquer parâmetro (piso, provável, teto, seed etc.), "
+        "o hash muda — isso comprova a integridade e reprodutibilidade da simulação."
     )
+    st.code(verification_hash, language="text")
 
-    # --------------- Auditoria ----------------
-    st.subheader("Auditoria & Comprovação")
-    st.json({
-        "item": meta["item"],
-        "triangular": meta["triangular"],
-        "iterations": meta["iterations"],
-        "seed": meta["seed"],
-        "duration_ms": meta["duration_ms"],
-        "cancelled": meta["cancelled"],
-        "verification_hash": verification_hash
-    })
-
-    # --------------- Download CSV -------------
-    df_meta = pd.DataFrame([
-        ["Item", meta["item"]],
+    # ----------- Exportação CSV -----------
+    df = pd.DataFrame([
+        ["Item", item],
         ["Piso (A)", piso],
         ["Provável (B)", provavel],
         ["Teto (C)", teto],
         ["Iterações", n],
         ["Seed", seed],
         ["Duração (ms)", duration_ms],
-        ["Canceladas", 0],
-        ["Hash Verificação", verification_hash],
-        ["EV (média)", mean],
+        ["Hash", verification_hash],
         ["P50", p50],
         ["P95", p95],
-        ["P(≥ Meta)", prob_meta],
-        ["P(≥ Provável)", prob_ge_B],
-        ["P(≥ Piso)", prob_ge_A],
+        ["EV", mean],
+        ["< Faixa1", pct_below_f1],
+        ["Faixa1–Faixa2", pct_f1_f2],
+        ["Faixa2–Faixa3", pct_f2_f3],
+        ["> Faixa3", pct_above_f3],
     ], columns=["Parâmetro", "Valor"])
 
-    # compactar CSV em memória
-    csv_buf = io.StringIO()
-    df_meta.to_csv(csv_buf, index=False)
-    st.download_button(
-        "📥 Baixar CSV (metadados + estatísticas)",
-        data=csv_buf.getvalue().encode("utf-8"),
-        file_name=f"resultado_montecarlo_{int(time.time())}.csv",
-        mime="text/csv"
-    )
+    buf = io.StringIO()
+    df.to_csv(buf, index=False)
+    st.download_button("📥 Baixar CSV com Resultados", buf.getvalue().encode("utf-8"),
+                       file_name=f"montecarlo_exxata_{int(time.time())}.csv", mime="text/csv")
 
 else:
-    st.info("Defina A, B, C e clique em **Rodar simulação** (mínimo de 10.000 iterações).")
+    st.info("Defina Piso (A), Provável (B) e Teto (C), depois clique em **Rodar simulação**.")
