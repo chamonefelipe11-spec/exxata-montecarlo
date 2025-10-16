@@ -20,7 +20,27 @@ html, body, [class*="css"]  { font-family: 'Manrope', system-ui, -apple-system, 
 h1,h2,h3,h4 { color: var(--exxata-blue) !important; letter-spacing: .2px; }
 .kpi .stMetricValue { color: var(--exxata-red) !important; font-weight:800 !important; }
 .kpi .stMetricLabel { color: var(--exxata-slate) !important; }
-.stButton>button { background: var(--exxata-red); border:0; }
+
+/* === Exxata Buttons: texto branco, hover escuro, sombra e animação === */
+.stButton>button,
+.stDownloadButton>button {
+  background: var(--exxata-red) !important;
+  border: none !important;
+  color: #ffffff !important;          /* texto branco */
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.12) !important;
+  transition: all 0.15s ease-in-out !important;
+}
+.stButton>button:hover,
+.stDownloadButton>button:hover {
+  background: #b51606 !important;     /* tom mais escuro no hover */
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.18) !important;
+}
+
+/* Cards e elementos auxiliares */
 .block { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
 .pill { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; background:#EEF2FF; color:#1E293B; border:1px solid #E5E7EB; margin:4px 6px 0 0; font-size:13px;}
 .pill small{color:#64748B}
@@ -57,12 +77,10 @@ def faixas_from_limits(vals_sorted: np.ndarray, limits: list[float]):
     limits = sorted(set([float(x) for x in limits if x is not None]))
     if not limits:
         return []
-
     edges = [-np.inf] + limits + [np.inf]
     rows = []
     for i in range(len(edges) - 1):
         lo, hi = edges[i], edges[i+1]
-
         if i == 0:
             label = f"Abaixo de {brl(hi)}"
             mask = (vals_sorted < hi)
@@ -72,13 +90,17 @@ def faixas_from_limits(vals_sorted: np.ndarray, limits: list[float]):
         else:
             label = f"Acima de {brl(limits[-1])}"
             mask = (vals_sorted >= lo)
-
         rows.append((label, float(mask.mean())))
     return rows
 
 def make_pdf(kpis, faixas_rows, meta, hist_png, cdf_png):
     """Gera relatório PDF (KPIs, faixas, gráficos, auditoria)."""
     buf = io.BytesIO()
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib import colors
+
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=24, bottomMargin=24, leftMargin=36, rightMargin=36)
     styles = getSampleStyleSheet()
     title = styles["Heading1"]; title.textColor = colors.HexColor("#4284D7")
@@ -95,7 +117,8 @@ def make_pdf(kpis, faixas_rows, meta, hist_png, cdf_png):
             ["Iterações", f"{meta['iterations']:,}".replace(",", ".")],
             ["Seed", str(meta["seed"])],
             ["Duração (ms)", str(meta["duration_ms"])]]
-    t = Table(data, hAlign="LEFT"); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),0.25,colors.HexColor("#B2B2BB"))]))
+    t = Table(data, hAlign="LEFT")
+    t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),0.25,colors.HexColor("#B2B2BB"))]))
     story.append(t); story.append(Spacer(1, 12))
     # Faixas
     story.append(Paragraph("Distribuição por Faixa de Acordo", h2))
@@ -129,7 +152,7 @@ with st.sidebar:
     seed = st.number_input("Seed", value=20251015, step=1)
 
     st.markdown("---")
-    st.header("Faixas de Acordo")
+    st.header("Faixas de Acordo (didático)")
     n_limits = st.slider("Quantos limites deseja usar?", 1, 8, 3)
     limits = []
     for i in range(n_limits):
@@ -141,9 +164,9 @@ with st.sidebar:
 
     col_auto1, col_auto2 = st.columns(2)
     with col_auto1:
-        auto_q = st.button("Quantis (P20,P40,P60)", use_container_width=True)
+        auto_q = st.button("Quantis (P20,P40,P60,P80)", use_container_width=True)
     with col_auto2:
-        auto_contract = st.button("Metas (2MM, 3MM)", use_container_width=True)
+        auto_contract = st.button("Metas (2MM, 3MM, ...)", use_container_width=True)
 
     rodar = st.button("🚀 Rodar simulação", use_container_width=True)
 
@@ -161,7 +184,7 @@ if rodar:
 
     # Auto-preencher limites se usuário clicou
     if auto_q:
-        qs = [0.2,0.4,0.6,0.8]  # serão cortados pelo n_limits
+        qs = [0.2,0.4,0.6,0.8]
         qvals = [float(np.quantile(sorted_vals, q)) for q in qs][:n_limits]
         limits = sorted(qvals)
         st.success("Limites preenchidos pelos quantis.")
@@ -179,10 +202,9 @@ if rodar:
     with k2: st.metric("P50 (mediana)", brl(p50))
     with k3: st.metric("P95 (alto)", brl(p95))
     with k4: st.metric("Simulações", f"{n:,}".replace(",", "."))
-
     st.caption("• **P50**: 50% dos resultados são menores que este valor.  • **P95**: 95% dos resultados são menores (limite superior provável).")
 
-    # Gráficos + buffers para PDF
+    # Gráficos + buffers p/ PDF
     left,right = st.columns(2)
     with left:
         st.subheader("📊 Distribuição (Histograma)")
@@ -200,7 +222,7 @@ if rodar:
         buf_cdf = io.BytesIO(); fig2.savefig(buf_cdf, format="png", bbox_inches="tight", dpi=160); buf_cdf.seek(0)
         st.pyplot(fig2, clear_figure=True)
 
-    # Pré-visualização das faixas (pills) — renderização correta
+    # Pré-visualização das faixas (pills)
     st.markdown("### 🎯 Distribuição por Faixa de Acordo")
     pills_html = "<div style='display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px 0;'>"
     for i, lim in enumerate(limits, start=1):
@@ -211,7 +233,7 @@ if rodar:
     for lbl, pct in faixas_rows:
         st.write(f"**{pct*100:.2f}%** — {lbl}")
 
-    # Sugestões de limites
+    # Dicas limites
     st.markdown(
         f"<div class='hint'><b>💡 Como escolher os limites?</b><br>"
         f"• <b>Quantis</b>: P20, P40, P60, P80 — bons cortes naturais. "
@@ -223,7 +245,7 @@ if rodar:
         unsafe_allow_html=True
     )
 
-    # Auditoria & Assinatura (com validador interno)
+    # Auditoria & Assinatura
     st.markdown("### 🧾 Auditoria & Assinatura do Experimento")
     signature, signature_json, verification_hash = compute_hash_signature(item, piso, provavel, teto, n, seed, duration_ms)
     st.write(f"Foram realizadas **{n:,} simulações** em **{duration_ms} ms**.")
@@ -261,4 +283,3 @@ if rodar:
 
 else:
     st.info("Defina **Piso (A)**, **Provável (B)** e **Teto (C)**, ajuste as **faixas (1–8)** e clique em **Rodar simulação**.")
-
