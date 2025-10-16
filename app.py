@@ -17,12 +17,12 @@ st.markdown("""
   --exxata-blue:#4284D7; --exxata-red:#D51D07; --exxata-gray:#B2B2BB; --exxata-slate:#78909C;
 }
 html, body, [class*="css"]  { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, sans-serif !important; }
-h1,h2,h3,h4 { color: var(--exxata-blue) !important; letter-spacing: .2px;}
+h1,h2,h3,h4 { color: var(--exxata-blue) !important; letter-spacing: .2px; }
 .kpi .stMetricValue { color: var(--exxata-red) !important; font-weight:800 !important; }
 .kpi .stMetricLabel { color: var(--exxata-slate) !important; }
 .stButton>button { background: var(--exxata-red); border:0; }
 .block { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
-.pill { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#EEF2FF; color:#1E293B; border:1px solid #E5E7EB; margin:4px 6px 0 0; font-size:13px;}
+.pill { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; background:#EEF2FF; color:#1E293B; border:1px solid #E5E7EB; margin:4px 6px 0 0; font-size:13px;}
 .pill small{color:#64748B}
 .hint{background:#EEF6FF; border:1px solid #E0ECFF; padding:14px; border-radius:12px;}
 .codebox{font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; padding:10px; border:1px dashed #CBD5E1; border-radius:8px; background:#F8FAFC;}
@@ -38,9 +38,46 @@ st.caption(
 
 # ----------------- Helpers -----------------
 def brl(x: float) -> str:
-    return f"R$ {x:,.0f}".replace(",", ".")  # valores grandes legíveis
+    """Formato BRL simples para números grandes (sem centavos)."""
+    return f"R$ {x:,.0f}".replace(",", ".")
+
+def compute_hash_signature(item, piso, provavel, teto, iterations, seed, duration_ms):
+    """Gera JSON canônico e hash SHA-256 (para verificação externa)."""
+    signature = {
+        "item": item,
+        "piso": float(piso), "provavel": float(provavel), "teto": float(teto),
+        "iterations": int(iterations), "seed": int(seed), "duration_ms": int(duration_ms)
+    }
+    raw = json.dumps(signature, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    digest = hashlib.sha256(raw).hexdigest().upper()
+    return signature, raw.decode("utf-8"), digest
+
+def faixas_from_limits(vals_sorted: np.ndarray, limits: list[float]):
+    """Monta faixas (abaixo, entre, acima) e calcula % por faixa."""
+    limits = sorted(set([float(x) for x in limits if x is not None]))
+    if not limits:
+        return []
+
+    edges = [-np.inf] + limits + [np.inf]
+    rows = []
+    for i in range(len(edges) - 1):
+        lo, hi = edges[i], edges[i+1]
+
+        if i == 0:
+            label = f"Abaixo de {brl(hi)}"
+            mask = (vals_sorted < hi)
+        elif i < len(edges) - 2:
+            label = f"Entre {brl(lo)} e {brl(hi)}"
+            mask = (vals_sorted >= lo) & (vals_sorted < hi)
+        else:
+            label = f"Acima de {brl(limits[-1])}"
+            mask = (vals_sorted >= lo)
+
+        rows.append((label, float(mask.mean())))
+    return rows
 
 def make_pdf(kpis, faixas_rows, meta, hist_png, cdf_png):
+    """Gera relatório PDF (KPIs, faixas, gráficos, auditoria)."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=24, bottomMargin=24, leftMargin=36, rightMargin=36)
     styles = getSampleStyleSheet()
@@ -77,49 +114,24 @@ def make_pdf(kpis, faixas_rows, meta, hist_png, cdf_png):
         f"Hash (SHA-256 do JSON abaixo): <font face='Courier'>{meta['hash']}</font>.", p))
     doc.build(story); buf.seek(0); return buf
 
-def compute_hash_signature(item, piso, provavel, teto, iterations, seed, duration_ms):
-    signature = {
-        "item": item,
-        "piso": float(piso), "provavel": float(provavel), "teto": float(teto),
-        "iterations": int(iterations), "seed": int(seed), "duration_ms": int(duration_ms)
-    }
-    raw = json.dumps(signature, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    digest = hashlib.sha256(raw).hexdigest().upper()
-    return signature, raw.decode("utf-8"), digest
-
-def faixas_from_limits(vals_sorted: np.ndarray, limits: list[float]):
-    limits = sorted(set([float(x) for x in limits if x is not None]))
-    # Faixas: abaixo do 1º, entre vizinhos e acima do último
-    edges = [-np.inf] + limits + [np.inf]
-    rows = []
-    for i in range(len(edges)-1):
-        lo, hi = edges[i], edges[i+1]
-        if i < len(edges)-2:
-            mask = (vals_sorted >= lo) & (vals_sorted < hi)
-            label = f"Entre {brl(lo if np.isfinite(lo) else limits[0])} e {brl(hi)}" if np.isfinite(lo) else f"Abaixo de {brl(hi)}"
-        else:
-            mask = (vals_sorted >= lo)
-            label = f"Acima de {brl(limits[-1])}"
-        rows.append((label, float(mask.mean())))
-    return rows
-
 # ----------------- Entradas -----------------
 with st.sidebar:
     st.header("Premissas do Cenário")
     item = st.text_input("Item (pleito/negociação)", "Negociação A")
+
     piso = st.number_input("A — Piso (R$)", min_value=0.0, value=2_000_000.0, step=100_000.0, format="%.2f")
     default_B = max(2_500_000.0, piso)
     provavel = st.number_input("B — Provável (R$)", min_value=float(piso), value=default_B, step=100_000.0, format="%.2f")
     default_C = max(3_500_000.0, provavel)
     teto = st.number_input("C — Teto (R$)", min_value=float(provavel), value=default_C, step=100_000.0, format="%.2f")
+
     iters = st.number_input("Iterações (≥10.000)", min_value=10_000, value=20_000, step=1_000)
     seed = st.number_input("Seed", value=20251015, step=1)
 
     st.markdown("---")
-    st.header("Faixas de Acordo")
+    st.header("Faixas de Acordo (didático)")
     n_limits = st.slider("Quantos limites deseja usar?", 1, 8, 3)
     limits = []
-    last_min = 1_000_000.0
     for i in range(n_limits):
         if i == 0:
             val = st.number_input(f"Limite {i+1} (R$)", min_value=0.0, value=2_000_000.0, step=100_000.0, key=f"lim{i}")
@@ -129,9 +141,9 @@ with st.sidebar:
 
     col_auto1, col_auto2 = st.columns(2)
     with col_auto1:
-        auto_q = st.button("Quantis (P20,P40,P60)", use_container_width=True)
+        auto_q = st.button("Quantis (P20,P40,P60,P80)", use_container_width=True)
     with col_auto2:
-        auto_contract = st.button("Metas (2MM,3MM...)", use_container_width=True)
+        auto_contract = st.button("Metas (2MM, 3MM, ...)", use_container_width=True)
 
     rodar = st.button("🚀 Rodar simulação", use_container_width=True)
 
@@ -141,12 +153,15 @@ if rodar:
     rng = np.random.default_rng(int(seed))
     valores = rng.triangular(left=piso, mode=provavel, right=teto, size=int(iters))
     sorted_vals = np.sort(valores); n = len(sorted_vals)
-    mean = float(np.mean(sorted_vals)); p50 = float(np.quantile(sorted_vals, 0.5)); p95 = float(np.quantile(sorted_vals, 0.95))
+
+    mean = float(np.mean(sorted_vals))
+    p50  = float(np.quantile(sorted_vals, 0.5))
+    p95  = float(np.quantile(sorted_vals, 0.95))
     duration_ms = int((time.perf_counter() - start)*1000)
 
-    # Auto-preenchimento de limites se usuário clicou
+    # Auto-preencher limites se usuário clicou
     if auto_q:
-        qs = [0.2,0.4,0.6,0.8]
+        qs = [0.2,0.4,0.6,0.8]  # serão cortados pelo n_limits
         qvals = [float(np.quantile(sorted_vals, q)) for q in qs][:n_limits]
         limits = sorted(qvals)
         st.success("Limites preenchidos pelos quantis.")
@@ -160,12 +175,14 @@ if rodar:
 
     # KPIs
     k1,k2,k3,k4 = st.columns(4, gap="medium")
-    with k1: st.metric("EV (média)", brl(mean), label_visibility="visible", help="Valor esperado")
-    with k2: st.metric("P50 (mediana)", brl(p50), help="50% dos resultados são menores que este valor")
-    with k3: st.metric("P95 (alto)", brl(p95), help="95% dos resultados são menores que este valor")
+    with k1: st.metric("EV (média)", brl(mean))
+    with k2: st.metric("P50 (mediana)", brl(p50))
+    with k3: st.metric("P95 (alto)", brl(p95))
     with k4: st.metric("Simulações", f"{n:,}".replace(",", "."))
 
-    # Gráficos (e buffers para PDF)
+    st.caption("• **P50**: 50% dos resultados são menores que este valor.  • **P95**: 95% dos resultados são menores (limite superior provável).")
+
+    # Gráficos + buffers para PDF
     left,right = st.columns(2)
     with left:
         st.subheader("📊 Distribuição (Histograma)")
@@ -176,19 +193,37 @@ if rodar:
         st.pyplot(fig, clear_figure=True)
     with right:
         st.subheader("📈 Curva Acumulada (CDF)")
-        y = np.linspace(0,1,n); fig2, ax2 = plt.subplots()
-        ax2.plot(sorted_vals, y, color="#4284D7"); ax2.set_xlabel("Valor (R$)"); ax2.set_ylabel("Probabilidade acumulada")
+        y = np.linspace(0,1,n)
+        fig2, ax2 = plt.subplots()
+        ax2.plot(sorted_vals, y, color="#4284D7")
+        ax2.set_xlabel("Valor (R$)"); ax2.set_ylabel("Probabilidade acumulada")
         buf_cdf = io.BytesIO(); fig2.savefig(buf_cdf, format="png", bbox_inches="tight", dpi=160); buf_cdf.seek(0)
         st.pyplot(fig2, clear_figure=True)
 
-    # Pré-visualização das faixas
+    # Pré-visualização das faixas (pills) — renderização correta
     st.markdown("### 🎯 Distribuição por Faixa de Acordo")
-    preview = " ".join([f"<span class='pill'><b>{i+1}</b> <small>{brl(limits[i])}</small></span>" for i in range(len(limits))])
-    st.markdown(preview, unsafe_allow_html=True)
+    pills_html = "<div style='display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px 0;'>"
+    for i, lim in enumerate(limits, start=1):
+        pills_html += f"<span class='pill'><b>{i}</b><small>{brl(float(lim))}</small></span>"
+    pills_html += "</div>"
+    st.markdown(pills_html, unsafe_allow_html=True)
+
     for lbl, pct in faixas_rows:
         st.write(f"**{pct*100:.2f}%** — {lbl}")
 
-    # Auditoria & Assinatura
+    # Sugestões de limites
+    st.markdown(
+        f"<div class='hint'><b>💡 Como escolher os limites?</b><br>"
+        f"• <b>Quantis</b>: P20, P40, P60, P80 — bons cortes naturais. "
+        f"Sugestão: {brl(float(np.quantile(sorted_vals,0.2)))}, "
+        f"{brl(float(np.quantile(sorted_vals,0.4)))}, "
+        f"{brl(float(np.quantile(sorted_vals,0.6)))}, "
+        f"{brl(float(np.quantile(sorted_vals,0.8)))}.<br>"
+        f"• <b>Metas contratuais</b>: patamares de negociação (2MM, 3MM, 4MM...).</div>",
+        unsafe_allow_html=True
+    )
+
+    # Auditoria & Assinatura (com validador interno)
     st.markdown("### 🧾 Auditoria & Assinatura do Experimento")
     signature, signature_json, verification_hash = compute_hash_signature(item, piso, provavel, teto, n, seed, duration_ms)
     st.write(f"Foram realizadas **{n:,} simulações** em **{duration_ms} ms**.")
@@ -197,7 +232,6 @@ if rodar:
     st.write("**Hash SHA-256:**")
     st.code(verification_hash, language="text")
 
-    # Verificador interno
     st.markdown("#### Verificar um JSON manualmente")
     test_json = st.text_area("Cole aqui o JSON para validar", value=signature_json, height=120)
     if st.button("Validar JSON → SHA-256"):
@@ -227,6 +261,3 @@ if rodar:
 
 else:
     st.info("Defina **Piso (A)**, **Provável (B)** e **Teto (C)**, ajuste as **faixas (1–8)** e clique em **Rodar simulação**.")
-
-
-
