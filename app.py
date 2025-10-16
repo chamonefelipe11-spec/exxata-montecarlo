@@ -1,4 +1,4 @@
-# app.py — Exxata Monte Carlo (Triangular A/B/C) com faixas (até 8) e PDF
+# app.py — Exxata Monte Carlo (Triangular A/B/C) com faixas (até 8), PDF e verificação de hash
 import io, time, json, hashlib
 import numpy as np, pandas as pd, streamlit as st, matplotlib.pyplot as plt
 from reportlab.lib.pagesizes import A4
@@ -9,13 +9,23 @@ from reportlab.lib import colors
 # ----------------- Identidade visual Exxata -----------------
 st.set_page_config(page_title="Exxata | Simulação Monte Carlo", layout="wide", page_icon="📈")
 st.markdown("""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;600;700;800&display=swap');
-html, body, [class*="css"]  { font-family: 'Manrope', sans-serif !important; }
-h1,h2,h3,h4 { color:#4284D7 !important; }
-div[data-testid="stMetricValue"] { color:#D51D07 !important; font-weight:800; }
-div[data-testid="stMetricLabel"] { color:#78909C !important; }
-button[kind="primary"] { background:#D51D07; }
+:root{
+  --exxata-blue:#4284D7; --exxata-red:#D51D07; --exxata-gray:#B2B2BB; --exxata-slate:#78909C;
+}
+html, body, [class*="css"]  { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, sans-serif !important; }
+h1,h2,h3,h4 { color: var(--exxata-blue) !important; letter-spacing: .2px;}
+.kpi .stMetricValue { color: var(--exxata-red) !important; font-weight:800 !important; }
+.kpi .stMetricLabel { color: var(--exxata-slate) !important; }
+.stButton>button { background: var(--exxata-red); border:0; }
+.block { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+.pill { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#EEF2FF; color:#1E293B; border:1px solid #E5E7EB; margin:4px 6px 0 0; font-size:13px;}
+.pill small{color:#64748B}
+.hint{background:#EEF6FF; border:1px solid #E0ECFF; padding:14px; border-radius:12px;}
+.codebox{font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; padding:10px; border:1px dashed #CBD5E1; border-radius:8px; background:#F8FAFC;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -28,54 +38,18 @@ st.caption(
 
 # ----------------- Helpers -----------------
 def brl(x: float) -> str:
-    return f"R$ {x:,.0f}".replace(",", ".")  # números grandes mais legíveis
+    return f"R$ {x:,.0f}".replace(",", ".")  # valores grandes legíveis
 
-def parse_limits(text: str, max_limits: int = 8):
-    # Extrai números, ordena, remove duplicados, corta no máximo permitido
-    if not text.strip():
-        return []
-    parts = [p.strip().replace(" ", "") for p in text.split(",")]
-    vals = []
-    for p in parts:
-        p = p.replace("_","")
-        if p:
-            try:
-                vals.append(float(p))
-            except:
-                pass
-    vals = sorted(set(vals))
-    return vals[:max_limits]
-
-def bucket_percents(sorted_vals: np.ndarray, limits: list[float]):
-    # Dado vetor ordenado e lista de limites (k), retorna k+1 faixas com percentuais
-    if len(sorted_vals)==0:
-        return []
-    limits = sorted(limits)
-    edges = [-np.inf] + limits + [np.inf]
-    rows = []
-    for i in range(len(edges)-1):
-        low, high = edges[i], edges[i+1]
-        mask = (sorted_vals >= low) & (sorted_vals < high) if i < len(edges)-2 else (sorted_vals >= low)
-        pct = float(mask.mean())
-        label = (f"Abaixo de {brl(limits[0])}" if i==0 else
-                 (f"Entre {brl(limits[i-1])} e {brl(limits[i])}" if i < len(limits) else
-                  f"Acima de {brl(limits[-1])}"))
-        rows.append((label, pct))
-    return rows
-
-def make_pdf(kpis, rows_faixas, meta, hist_png, cdf_png):
+def make_pdf(kpis, faixas_rows, meta, hist_png, cdf_png):
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=24, bottomMargin=24, leftMargin=36, rightMargin=36)
     styles = getSampleStyleSheet()
     title = styles["Heading1"]; title.textColor = colors.HexColor("#4284D7")
     h2 = styles["Heading2"]; h2.textColor = colors.HexColor("#4284D7")
     p = styles["BodyText"]
-
     story = []
     story.append(Paragraph("Exxata – Simulação de Monte Carlo (Triangular A/B/C)", title))
-    story.append(Paragraph(f"Item: <b>{meta['item']}</b>", p))
-    story.append(Spacer(1, 10))
-
+    story.append(Paragraph(f"Item: <b>{meta['item']}</b>", p)); story.append(Spacer(1, 10))
     # KPIs
     story.append(Paragraph("Resultados Principais", h2))
     data = [["EV (média)", brl(kpis["mean"])],
@@ -86,59 +60,79 @@ def make_pdf(kpis, rows_faixas, meta, hist_png, cdf_png):
             ["Duração (ms)", str(meta["duration_ms"])]]
     t = Table(data, hAlign="LEFT"); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),0.25,colors.HexColor("#B2B2BB"))]))
     story.append(t); story.append(Spacer(1, 12))
-
     # Faixas
     story.append(Paragraph("Distribuição por Faixa de Acordo", h2))
-    table_rows = [["Faixa","%"]] + [[lbl, f"{100*pct:.2f}%"] for lbl,pct in rows_faixas]
+    table_rows = [["Faixa","%"]] + [[lbl, f"{100*pct:.2f}%"] for lbl,pct in faixas_rows]
     tf = Table(table_rows, hAlign="LEFT", colWidths=[300, 80])
     tf.setStyle(TableStyle([("GRID",(0,0),(-1,-1),0.25,colors.HexColor("#B2B2BB")),("BACKGROUND",(0,0),(-1,0),colors.HexColor("#78909C"))]))
     story.append(tf); story.append(Spacer(1, 12))
-
     # Gráficos
-    if hist_png:
-        story.append(Paragraph("Histograma", h2))
-        story.append(Image(hist_png, width=480, height=260)); story.append(Spacer(1, 6))
-    if cdf_png:
-        story.append(Paragraph("Curva Acumulada (CDF)", h2))
-        story.append(Image(cdf_png, width=480, height=260)); story.append(Spacer(1, 12))
-
+    if hist_png: story.append(Paragraph("Histograma", h2)); story.append(Image(hist_png, width=480, height=260)); story.append(Spacer(1,6))
+    if cdf_png:  story.append(Paragraph("Curva Acumulada (CDF)", h2)); story.append(Image(cdf_png, width=480, height=260)); story.append(Spacer(1,12))
     # Auditoria
     story.append(Paragraph("Auditoria & Comprovação", h2))
     story.append(Paragraph(
         f"Foram realizadas <b>{meta['iterations']:,}</b> simulações em {meta['duration_ms']} ms. "
         f"Piso={brl(meta['piso'])}; Provável={brl(meta['provavel'])}; Teto={brl(meta['teto'])}. "
-        f"Hash: <font face='Courier'>{meta['hash']}</font>.", p
-    ))
+        f"Hash (SHA-256 do JSON abaixo): <font face='Courier'>{meta['hash']}</font>.", p))
+    doc.build(story); buf.seek(0); return buf
 
-    doc.build(story)
-    buf.seek(0)
-    return buf
+def compute_hash_signature(item, piso, provavel, teto, iterations, seed, duration_ms):
+    signature = {
+        "item": item,
+        "piso": float(piso), "provavel": float(provavel), "teto": float(teto),
+        "iterations": int(iterations), "seed": int(seed), "duration_ms": int(duration_ms)
+    }
+    raw = json.dumps(signature, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    digest = hashlib.sha256(raw).hexdigest().upper()
+    return signature, raw.decode("utf-8"), digest
+
+def faixas_from_limits(vals_sorted: np.ndarray, limits: list[float]):
+    limits = sorted(set([float(x) for x in limits if x is not None]))
+    # Faixas: abaixo do 1º, entre vizinhos e acima do último
+    edges = [-np.inf] + limits + [np.inf]
+    rows = []
+    for i in range(len(edges)-1):
+        lo, hi = edges[i], edges[i+1]
+        if i < len(edges)-2:
+            mask = (vals_sorted >= lo) & (vals_sorted < hi)
+            label = f"Entre {brl(lo if np.isfinite(lo) else limits[0])} e {brl(hi)}" if np.isfinite(lo) else f"Abaixo de {brl(hi)}"
+        else:
+            mask = (vals_sorted >= lo)
+            label = f"Acima de {brl(limits[-1])}"
+        rows.append((label, float(mask.mean())))
+    return rows
 
 # ----------------- Entradas -----------------
 with st.sidebar:
     st.header("Premissas do Cenário")
     item = st.text_input("Item (pleito/negociação)", "Negociação A")
-
     piso = st.number_input("A — Piso (R$)", min_value=0.0, value=2_000_000.0, step=100_000.0, format="%.2f")
     default_B = max(2_500_000.0, piso)
     provavel = st.number_input("B — Provável (R$)", min_value=float(piso), value=default_B, step=100_000.0, format="%.2f")
     default_C = max(3_500_000.0, provavel)
     teto = st.number_input("C — Teto (R$)", min_value=float(provavel), value=default_C, step=100_000.0, format="%.2f")
-
     iters = st.number_input("Iterações (≥10.000)", min_value=10_000, value=20_000, step=1_000)
     seed = st.number_input("Seed", value=20251015, step=1)
 
     st.markdown("---")
-    st.header("Faixas de Acordo")
-    modo_faixas = st.radio("Modo", ["Simples (3 limites)", "Avançado (até 8 limites)"], horizontal=False)
-    if modo_faixas.startswith("Simples"):
-        f1 = st.number_input("Limite 1 (R$)", min_value=0.0, value=2_000_000.0, step=100_000.0)
-        f2 = st.number_input("Limite 2 (R$)", min_value=f1, value=3_000_000.0, step=100_000.0)
-        f3 = st.number_input("Limite 3 (R$)", min_value=f2, value=4_000_000.0, step=100_000.0)
-        limites_texto = f"{int(f1)},{int(f2)},{int(f3)}"
-    else:
-        limites_texto = st.text_input("Limites (R$) separados por vírgula (máx. 8)",
-                                      value="2_000_000, 3_000_000, 4_000_000")
+    st.header("Faixas de Acordo (didático)")
+    n_limits = st.slider("Quantos limites deseja usar?", 1, 8, 3)
+    limits = []
+    last_min = 1_000_000.0
+    for i in range(n_limits):
+        if i == 0:
+            val = st.number_input(f"Limite {i+1} (R$)", min_value=0.0, value=2_000_000.0, step=100_000.0, key=f"lim{i}")
+        else:
+            val = st.number_input(f"Limite {i+1} (R$)", min_value=float(limits[-1]), value=float(limits[-1] + 1_000_000.0), step=100_000.0, key=f"lim{i}")
+        limits.append(val)
+
+    col_auto1, col_auto2 = st.columns(2)
+    with col_auto1:
+        auto_q = st.button("Preencher pelos quantis (P20,P40,P60,P80)", use_container_width=True)
+    with col_auto2:
+        auto_contract = st.button("Preencher metas contratuais (2MM,3MM,4MM...)", use_container_width=True)
+
     rodar = st.button("🚀 Rodar simulação", use_container_width=True)
 
 # ----------------- Execução -----------------
@@ -146,94 +140,90 @@ if rodar:
     start = time.perf_counter()
     rng = np.random.default_rng(int(seed))
     valores = rng.triangular(left=piso, mode=provavel, right=teto, size=int(iters))
-    sorted_vals = np.sort(valores)
-    n = len(sorted_vals)
-    mean = float(np.mean(sorted_vals))
-    p50 = float(np.quantile(sorted_vals, 0.5))
-    p95 = float(np.quantile(sorted_vals, 0.95))
+    sorted_vals = np.sort(valores); n = len(sorted_vals)
+    mean = float(np.mean(sorted_vals)); p50 = float(np.quantile(sorted_vals, 0.5)); p95 = float(np.quantile(sorted_vals, 0.95))
     duration_ms = int((time.perf_counter() - start)*1000)
 
-    # Limites / Faixas (até 8)
-    limites = parse_limits(limites_texto, max_limits=8)
-    faixas = bucket_percents(sorted_vals, limites)
+    # Auto-preenchimento de limites se usuário clicou
+    if auto_q:
+        qs = [0.2,0.4,0.6,0.8]
+        qvals = [float(np.quantile(sorted_vals, q)) for q in qs][:n_limits]
+        limits = sorted(qvals)
+        st.success("Limites preenchidos pelos quantis.")
+    if auto_contract:
+        base = 2_000_000.0
+        limits = [base + i*1_000_000.0 for i in range(n_limits)]
+        st.success("Limites preenchidos por metas contratuais (2MM, 3MM, ...).")
+
+    # Faixas
+    faixas_rows = faixas_from_limits(sorted_vals, limits)
 
     # KPIs
-    c1,c2,c3,c4 = st.columns(4)
-    c1.metric("EV (média)", brl(mean))
-    c2.metric("P50 (mediana)", brl(p50))
-    c3.metric("P95 (cenário alto)", brl(p95))
-    c4.metric("Simulações", f"{n:,}".replace(",", "."))
+    k1,k2,k3,k4 = st.columns(4, gap="medium")
+    with k1: st.metric("EV (média)", brl(mean), label_visibility="visible", help="Valor esperado")
+    with k2: st.metric("P50 (mediana)", brl(p50), help="50% dos resultados são menores que este valor")
+    with k3: st.metric("P95 (alto)", brl(p95), help="95% dos resultados são menores que este valor")
+    with k4: st.metric("Simulações", f"{n:,}".replace(",", "."))
 
-    st.caption("• **P50**: 50% dos resultados são menores que este valor.  • **P95**: 95% dos resultados são menores (limite superior provável).")
-
-    # Gráficos
+    # Gráficos (e buffers para PDF)
     left,right = st.columns(2)
     with left:
         st.subheader("📊 Distribuição (Histograma)")
         fig, ax = plt.subplots()
         ax.hist(sorted_vals, bins=25, color="#D51D07", edgecolor="#B2B2BB")
         ax.set_xlabel("Valor (R$)"); ax.set_ylabel("Frequência")
-        # exportável
         buf_hist = io.BytesIO(); fig.savefig(buf_hist, format="png", bbox_inches="tight", dpi=160); buf_hist.seek(0)
         st.pyplot(fig, clear_figure=True)
-
     with right:
         st.subheader("📈 Curva Acumulada (CDF)")
-        y = np.linspace(0,1,n)
-        fig2, ax2 = plt.subplots()
-        ax2.plot(sorted_vals, y, color="#4284D7")
-        ax2.set_xlabel("Valor (R$)"); ax2.set_ylabel("Probabilidade acumulada")
+        y = np.linspace(0,1,n); fig2, ax2 = plt.subplots()
+        ax2.plot(sorted_vals, y, color="#4284D7"); ax2.set_xlabel("Valor (R$)"); ax2.set_ylabel("Probabilidade acumulada")
         buf_cdf = io.BytesIO(); fig2.savefig(buf_cdf, format="png", bbox_inches="tight", dpi=160); buf_cdf.seek(0)
         st.pyplot(fig2, clear_figure=True)
 
-    # Faixas (até 8) – cards enxutos
+    # Pré-visualização das faixas
     st.markdown("### 🎯 Distribuição por Faixa de Acordo")
-    for lbl, pct in faixas:
+    preview = " ".join([f"<span class='pill'><b>{i+1}</b> <small>{brl(limits[i])}</small></span>" for i in range(len(limits))])
+    st.markdown(preview, unsafe_allow_html=True)
+    for lbl, pct in faixas_rows:
         st.write(f"**{pct*100:.2f}%** — {lbl}")
 
-    # Sugestões de limites (intuitivo)
-    st.info(
-        "💡 **Como escolher os limites?**\n"
-        "- **Quantis**: após rodar, use pontos como P20, P40, P60, P80 (divide em blocos equiprováveis). "
-        "Sugestão para este cenário: "
-        f"{brl(float(np.quantile(sorted_vals,0.2)))}, {brl(float(np.quantile(sorted_vals,0.4)))}, "
-        f"{brl(float(np.quantile(sorted_vals,0.6)))}, {brl(float(np.quantile(sorted_vals,0.8)))}.\n"
-        "- **Metas contratuais**: use patamares relevantes (ex.: {brl(2_000_000)}, {brl(3_000_000)}, {brl(4_000_000)}, ...)."
-    )
-
-    # Auditoria
-    st.markdown("### 🧾 Auditoria & Comprovação")
-    meta = dict(
-        item=item, piso=piso, provavel=provavel, teto=teto,
-        iterations=n, seed=int(seed), duration_ms=duration_ms
-    )
-    hash_str = json.dumps(meta, ensure_ascii=False).encode()
-    verification_hash = hashlib.sha256(hash_str).hexdigest().upper()
-    meta["hash"] = verification_hash
-    st.write(f"Foram realizadas **{n:,} simulações** em **{duration_ms} ms**. "
-             "O **hash** é um *carimbo digital* que muda se qualquer premissa mudar.")
+    # Auditoria & Assinatura
+    st.markdown("### 🧾 Auditoria & Assinatura do Experimento")
+    signature, signature_json, verification_hash = compute_hash_signature(item, piso, provavel, teto, n, seed, duration_ms)
+    st.write(f"Foram realizadas **{n:,} simulações** em **{duration_ms} ms**.")
+    st.write("**Como validar externamente?** Calcule **SHA-256** desta string JSON (UTF-8) em qualquer site de hash. O resultado deve ser igual ao código abaixo.")
+    st.markdown(f"<div class='codebox'>{signature_json}</div>", unsafe_allow_html=True)
+    st.write("**Hash SHA-256:**")
     st.code(verification_hash, language="text")
 
-    # Export CSV
-    df = pd.DataFrame([
-        ["Item", item], ["Piso (A)", piso], ["Provável (B)", provavel], ["Teto (C)", teto],
-        ["Iterações", n], ["Seed", int(seed)], ["Duração (ms)", duration_ms],
-        ["Hash", verification_hash], ["P50", p50], ["P95", p95], ["EV", mean],
-    ] + [[lbl, pct] for lbl, pct in faixas], columns=["Parâmetro","Valor"])
+    # Verificador interno
+    st.markdown("#### Verificar um JSON manualmente")
+    test_json = st.text_area("Cole aqui o JSON para validar", value=signature_json, height=120)
+    if st.button("Validar JSON → SHA-256"):
+        try:
+            raw = test_json.encode("utf-8")
+            st.write("Hash calculado:")
+            st.code(hashlib.sha256(raw).hexdigest().upper())
+        except Exception as e:
+            st.error(f"JSON inválido: {e}")
+
+    # Exportações
+    df = pd.DataFrame(
+        [["Item", item], ["Piso (A)", piso], ["Provável (B)", provavel], ["Teto (C)", teto],
+         ["Iterações", n], ["Seed", int(seed)], ["Duração (ms)", duration_ms],
+         ["Hash", verification_hash], ["P50", p50], ["P95", p95], ["EV", mean]]
+        + [[lbl, pct] for lbl, pct in faixas_rows],
+        columns=["Parâmetro","Valor"]
+    )
     csv_buf = io.StringIO(); df.to_csv(csv_buf, index=False)
     st.download_button("📥 Baixar CSV", csv_buf.getvalue().encode("utf-8"),
                        file_name=f"exxata_montecarlo_{int(time.time())}.csv", mime="text/csv")
 
-    # Export PDF
-    pdf = make_pdf(
-        kpis={"mean":mean,"p50":p50,"p95":p95},
-        rows_faixas=faixas, meta=meta,
-        hist_png=buf_hist, cdf_png=buf_cdf
-    )
+    pdf = make_pdf({"mean":mean, "p50":p50, "p95":p95}, faixas_rows,
+                   {**signature, "hash":verification_hash}, buf_hist, buf_cdf)
     st.download_button("🧾 Baixar Relatório PDF", data=pdf.getvalue(),
                        file_name=f"exxata_montecarlo_{int(time.time())}.pdf", mime="application/pdf")
 
 else:
-    st.info("Defina **Piso (A)**, **Provável (B)** e **Teto (C)**, escolha as **faixas**, e clique em **Rodar simulação**.")
-
-
+    st.info("Defina **Piso (A)**, **Provável (B)** e **Teto (C)**, ajuste as **faixas (1–8)** e clique em **Rodar simulação**.")
