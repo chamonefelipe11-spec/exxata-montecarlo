@@ -116,7 +116,7 @@ with st.sidebar:
     seed = st.number_input("Seed", value=20251015, step=1)
 
     st.markdown("---")
-    st.header("Faixas de Acordo (didático)")
+    st.header("Faixas de Acordo")
     n_limits = st.slider("Quantos limites deseja usar?", 1, 8, 3)
     limits = []
     last_min = 1_000_000.0
@@ -129,9 +129,9 @@ with st.sidebar:
 
     col_auto1, col_auto2 = st.columns(2)
     with col_auto1:
-        auto_q = st.button("Preencher pelos quantis (P20,P40,P60,P80)", use_container_width=True)
+        auto_q = st.button("Quantis (P20,P40,P60,P80)", use_container_width=True)
     with col_auto2:
-        auto_contract = st.button("Preencher metas contratuais (2MM,3MM,4MM...)", use_container_width=True)
+        auto_contract = st.button("Metas (2MM,3MM,4MM...)", use_container_width=True)
 
     rodar = st.button("🚀 Rodar simulação", use_container_width=True)
 
@@ -227,3 +227,4 @@ if rodar:
 
 else:
     st.info("Defina **Piso (A)**, **Provável (B)** e **Teto (C)**, ajuste as **faixas (1–8)** e clique em **Rodar simulação**.")
+
