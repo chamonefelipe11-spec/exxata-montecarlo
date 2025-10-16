@@ -1,5 +1,5 @@
 # app.py — Exxata Monte Carlo (Triangular A/B/C) com faixas (até 8) e PDF
-import io, time, json, 
+import io, time, json, hashlib
 import numpy as np, pandas as pd, streamlit as st, matplotlib.pyplot as plt
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
@@ -235,4 +235,5 @@ if rodar:
 
 else:
     st.info("Defina **Piso (A)**, **Provável (B)** e **Teto (C)**, escolha as **faixas**, e clique em **Rodar simulação**.")
+
 
