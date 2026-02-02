@@ -10,6 +10,7 @@
 
   --shadow-premium: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
   --shadow-premium-hover: 0 20px 40px -5px rgba(0, 0, 0, 0.7), 0 8px 12px -2px rgba(0, 0, 0, 0.4);
+  --shadow-red-glow: 0 0 15px rgba(213, 29, 7, 0.2);
 }
 
 @layer base {
@@ -63,5 +64,5 @@
 }
 
 .progress-bar {
-  @apply h-full bg-gradient-to-r from-exxata-blue to-exxata-red rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(213, 29, 7, 0.2)];
+  @apply h-full bg-gradient-to-r from-exxata-blue to-exxata-red rounded-full transition-all duration-1000 shadow-red-glow;
 }
