@@ -126,38 +126,41 @@ const Dashboard: React.FC = () => {
 
         setIsExporting(true);
         try {
-            // Pequeno delay para garantir renderização final
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             const canvas = await html2canvas(dashboardRef.current, {
-                scale: 1.5, // 1.5x é o equilíbrio ideal entre qualidade e peso
+                scale: 1.2, // Equilíbrio entre legibilidade e memória
                 useCORS: true,
-                logging: false,
+                allowTaint: true,
                 backgroundColor: '#020617',
                 onclone: (clonedDoc) => {
-                    // html2canvas não suporta backdrop-filter e pode quebrar.
-                    // Removemos durante a clonagem para captura estável.
-                    const glassElements = clonedDoc.querySelectorAll('[class*="glass-card"]');
-                    glassElements.forEach((el) => {
-                        const style = (el as HTMLElement).style;
-                        style.backdropFilter = 'none';
-                        (style as any).webkitBackdropFilter = 'none';
-                        style.background = '#1E293B'; // Fundo sólido para PDF
-                    });
+                    const style = clonedDoc.createElement('style');
+                    style.innerHTML = `
+                        * { 
+                            box-shadow: none !important; 
+                            text-shadow: none !important; 
+                            backdrop-filter: none !important; 
+                            -webkit-backdrop-filter: none !important;
+                            transition: none !important;
+                            animation: none !important;
+                        }
+                        .glass-card { background: #1E293B !important; }
+                    `;
+                    clonedDoc.head.appendChild(style);
                 }
             });
 
-            const imgData = canvas.toDataURL('image/png', 1.0);
+            const imgData = canvas.toDataURL('image/jpeg', 0.7);
             const pdf = new jsPDF('p', 'mm', 'a4');
-            const pageWidth = 210;
+            const pageWidth = pdf.internal.pageSize.getWidth();
             const imgWidth = pageWidth;
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-            pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+            pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
             pdf.save(`exxata_relatorio_${new Date().getTime()}.pdf`);
-        } catch (error) {
-            console.error('PDF Export Error:', error);
-            alert('Não foi possível gerar o PDF. Dica: Tente reduzir as configurações ou verifique se o navegador está atualizado.');
+        } catch (error: any) {
+            console.error('PDF Error:', error);
+            alert(`Erro na geração: ${error?.message || 'Memória insuficiente'}. Dica: Tente usar o Google Chrome ou reduzir o número de abas.`);
         } finally {
             setIsExporting(false);
         }
@@ -383,10 +386,10 @@ const Dashboard: React.FC = () => {
                                 </h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                     {stats.faixas.map((fx, i) => (
-                                        <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                                            <div className="flex justify-between items-center mb-2">
-                                                <span className="text-[10px] font-bold text-slate-500 truncate pr-2">{fx.label}</span>
-                                                <span className="text-sm font-black text-exxata-blue">{(fx.pct * 100).toFixed(1)}%</span>
+                                        <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl flex flex-col gap-2">
+                                            <div className="flex justify-between items-start">
+                                                <span className="text-[9px] font-bold text-slate-400 leading-tight uppercase block max-w-[70%]">{fx.label}</span>
+                                                <span className="text-sm font-black text-exxata-blue shrink-0">{(fx.pct * 100).toFixed(1)}%</span>
                                             </div>
                                             <div className="progress-container h-1.5 bg-white/5">
                                                 <div className="progress-bar" style={{ width: `${Math.max(fx.pct * 100, 1)}%` }}></div>
