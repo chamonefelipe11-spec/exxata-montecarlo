@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+  /* Paleta HEX Absoluta para compatibilidade com PDF e navegadores legados */
   --color-exxata-blue: #4284D7;
   --color-exxata-red: #D51D07;
   --color-dark-slate: #020617;
@@ -29,6 +30,9 @@
 @layer base {
   :root {
     color-scheme: dark;
+    /* Forçar variáveis nativas para evitar oklch dinâmico do Tailwind v4 */
+    --background: 2 6 23;
+    --foreground: 248 250 252;
   }
 
   body {
@@ -47,7 +51,7 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1E293B;
+  background: #1e293b;
   border-radius: 10px;
 }
 
@@ -61,21 +65,37 @@
 }
 
 .glass-card {
-  @apply bg-[#0F172A]/70 backdrop-blur-xl border border-white/5 shadow-premium transition-all duration-300;
+  /* Usando RGB sólido para evitar cálculos oklch no PDF */
+  background-color: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-premium);
+  transition: all 0.3s ease;
 }
 
 .glass-card:hover {
-  @apply shadow-premium-hover border-exxata-blue/20 bg-[#0F172A]/90;
+  box-shadow: var(--shadow-premium-hover);
+  border-color: rgba(66, 132, 215, 0.2);
+  background-color: rgba(15, 23, 42, 0.95);
 }
 
 .btn-primary {
-  @apply bg-gradient-to-br from-exxata-red to-[#B51606] text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-exxata-red/20 transition-all active:scale-95 hover:shadow-xl hover:shadow-exxata-red/30;
+  @apply bg-gradient-to-br from-[#D51D07] to-[#B51606] text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all active:scale-95 hover:shadow-xl;
 }
 
 .progress-container {
-  @apply h-2 bg-slate-900 rounded-full overflow-hidden border border-white/5;
+  background-color: #0f172a;
+  height: 0.375rem;
+  border-radius: 9999px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .progress-bar {
-  @apply h-full bg-gradient-to-r from-exxata-blue to-exxata-red rounded-full transition-all duration-1000 shadow-red-glow;
+  height: 100%;
+  background: linear-gradient(90deg, #4284D7, #D51D07);
+  border-radius: 9999px;
+  transition: all 1s ease;
 }

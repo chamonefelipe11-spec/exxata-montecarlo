@@ -129,10 +129,11 @@ const Dashboard: React.FC = () => {
             await new Promise(resolve => setTimeout(resolve, 500));
 
             const canvas = await html2canvas(dashboardRef.current, {
-                scale: 1.2,
+                scale: 1, // Escala 1 para máxima compatibilidade local e remota
                 useCORS: true,
                 backgroundColor: '#020617',
                 onclone: (clonedDoc) => {
+                    // Limpeza radical de CSS moderno que o html2canvas não suporta
                     const style = clonedDoc.createElement('style');
                     style.innerHTML = `
                         * { 
@@ -142,14 +143,23 @@ const Dashboard: React.FC = () => {
                             -webkit-backdrop-filter: none !important;
                             transition: none !important;
                             animation: none !important;
+                            /* Forçar fallback de cores oklch para HEX */
+                            color: #f8fafc !important; 
                         }
-                        .glass-card { background: #1E293B !important; }
+                        .glass-card { 
+                            background: #1e293b !important; 
+                            border: 1px solid #334155 !important;
+                        }
+                        h2, h3, h4, .text-white { color: #ffffff !important; }
+                        .text-slate-400 { color: #94a3b8 !important; }
+                        .text-exxata-blue { color: #4284D7 !important; }
+                        .bg-exxata-red { background-color: #D51D07 !important; }
                     `;
                     clonedDoc.head.appendChild(style);
                 }
             });
 
-            const imgData = canvas.toDataURL('image/jpeg', 0.8);
+            const imgData = canvas.toDataURL('image/jpeg', 0.9);
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
             const imgHeight = (canvas.height * pageWidth) / canvas.width;
@@ -158,7 +168,7 @@ const Dashboard: React.FC = () => {
             pdf.save(`exxata_relatorio_${new Date().getTime()}.pdf`);
         } catch (error: any) {
             console.error('PDF Error:', error);
-            alert('Falha na geração: O navegador não conseguiu processar a imagem. Dica: Tente reduzir o zoom da página.');
+            alert('Erro ao gerar PDF: O navegador está tendo dificuldade em processar os gráficos. Dica: Tente usar o botão de imprimir do sistema (Ctrl+P) e escolha "Salvar como PDF".');
         } finally {
             setIsExporting(false);
         }
