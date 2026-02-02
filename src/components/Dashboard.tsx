@@ -129,9 +129,8 @@ const Dashboard: React.FC = () => {
             await new Promise(resolve => setTimeout(resolve, 500));
 
             const canvas = await html2canvas(dashboardRef.current, {
-                scale: 1.2, // Equilíbrio entre legibilidade e memória
+                scale: 1.2,
                 useCORS: true,
-                allowTaint: true,
                 backgroundColor: '#020617',
                 onclone: (clonedDoc) => {
                     const style = clonedDoc.createElement('style');
@@ -150,17 +149,16 @@ const Dashboard: React.FC = () => {
                 }
             });
 
-            const imgData = canvas.toDataURL('image/jpeg', 0.7);
+            const imgData = canvas.toDataURL('image/jpeg', 0.8);
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
-            const imgWidth = pageWidth;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            const imgHeight = (canvas.height * pageWidth) / canvas.width;
 
-            pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
+            pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, imgHeight, undefined, 'FAST');
             pdf.save(`exxata_relatorio_${new Date().getTime()}.pdf`);
         } catch (error: any) {
             console.error('PDF Error:', error);
-            alert(`Erro na geração: ${error?.message || 'Memória insuficiente'}. Dica: Tente usar o Google Chrome ou reduzir o número de abas.`);
+            alert('Falha na geração: O navegador não conseguiu processar a imagem. Dica: Tente reduzir o zoom da página.');
         } finally {
             setIsExporting(false);
         }
