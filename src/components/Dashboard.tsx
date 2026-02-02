@@ -41,6 +41,7 @@ const Dashboard: React.FC = () => {
     const [manualLimits, setManualLimits] = useState('');
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [results, setResults] = useState<SimulationResults | null>(null);
+    const [isExporting, setIsExporting] = useState(false);
 
     const dashboardRef = useRef<HTMLDivElement>(null);
 
@@ -121,25 +122,40 @@ const Dashboard: React.FC = () => {
     };
 
     const exportPDF = async () => {
-        if (!dashboardRef.current) return;
+        if (!dashboardRef.current || isExporting) return;
 
-        const canvas = await html2canvas(dashboardRef.current, {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#0F172A' // Dark slate background to match
-        });
+        setIsExporting(true);
+        try {
+            // Pequeno delay para garantir renderização final
+            await new Promise(resolve => setTimeout(resolve, 300));
 
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            const canvas = await html2canvas(dashboardRef.current, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#020617',
+                windowWidth: dashboardRef.current.scrollWidth,
+                windowHeight: dashboardRef.current.scrollHeight
+            });
 
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`relatorio_exxata_${new Date().getTime()}.pdf`);
+            const imgData = canvas.toDataURL('image/png', 1.0);
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = 210;
+            const imgWidth = pageWidth;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+            pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+            pdf.save(`exxata_relatorio_${new Date().getTime()}.pdf`);
+        } catch (error) {
+            console.error('PDF Export Error:', error);
+            alert('Erro ao gerar o PDF. Verifique se o navegador bloqueou o download.');
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     return (
-        <div className="flex flex-col md:flex-row h-screen bg-[#0F172A] overflow-hidden text-white font-sans">
+        <div className="flex flex-col md:flex-row h-screen bg-[#020617] overflow-hidden text-white font-sans selection:bg-exxata-blue/30">
             {/* Sidebar */}
             <aside className="w-full md:w-80 bg-[#1E293B] border-r border-white/5 p-6 flex flex-col gap-6 overflow-y-auto">
                 <div className="flex items-center gap-3">
@@ -240,145 +256,152 @@ const Dashboard: React.FC = () => {
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 p-4 md:p-8 overflow-y-auto w-full" ref={dashboardRef}>
-                <header className="flex flex-col md:flex-row justify-between items-start gap-4 mb-8">
-                    <div>
-                        <h2 className="text-2xl font-manrope font-extrabold text-white">{itemName}</h2>
-                        <p className="text-slate-400 text-sm flex items-center gap-1.5">
-                            <Info size={14} className="text-exxata-blue" /> Simulação triangular estocástica baseada em riscos comerciais.
-                        </p>
-                    </div>
-                    <div className="flex gap-2">
-                        <button onClick={exportPDF} className="flex items-center gap-2 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-white/10 transition-all shadow-sm">
-                            <FileText size={16} /> Baixar Relatório PDF
-                        </button>
-                        <button onClick={exportExcel} className="flex items-center gap-2 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-white/10 transition-all shadow-sm">
-                            <Download size={16} /> Exportar XLSX
-                        </button>
-                    </div>
-                </header>
-
-                {stats ? (
-                    <div className="space-y-6">
-                        {/* KPI Grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {[
-                                { label: 'E.V. (Média)', val: formatBRL(stats.mean), color: 'text-exxata-blue', bg: 'bg-exxata-blue/5', icon: Target },
-                                { label: 'P50 (Mediana)', val: formatBRL(stats.median), color: 'text-slate-300', bg: 'bg-white/5', icon: TrendingUp },
-                                { label: 'P95 (Cenário Alto)', val: formatBRL(stats.p95), color: 'text-exxata-red', bg: 'bg-exxata-red/5', icon: BarChart3 },
-                                { label: 'Performance', val: `${stats.duration.toFixed(0)} ms`, color: 'text-slate-500', bg: 'bg-white/5', icon: Calculator },
-                            ].map((kpi, i) => (
-                                <div key={i} className={`glass-card p-5 rounded-2xl ${kpi.bg} border-white/5`}>
-                                    <div className="flex justify-between items-start mb-1">
-                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">{kpi.label}</span>
-                                        <kpi.icon size={14} className={kpi.color} />
-                                    </div>
-                                    <div className={`text-xl font-manrope font-extrabold truncate ${kpi.color}`}>{kpi.val}</div>
-                                </div>
-                            ))}
+            <main className="flex-1 overflow-y-auto w-full">
+                <div ref={dashboardRef} className="p-4 md:p-8 space-y-8 bg-[#020617]">
+                    <header className="flex flex-col md:flex-row justify-between items-start gap-4 mb-8">
+                        <div>
+                            <h2 className="text-2xl font-manrope font-extrabold text-white">{itemName}</h2>
+                            <p className="text-slate-400 text-sm flex items-center gap-1.5">
+                                <Info size={14} className="text-exxata-blue" /> Simulação triangular estocástica baseada em riscos comerciais.
+                            </p>
                         </div>
-
-                        {/* Charts Area */}
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                            <div className="glass-card p-6 rounded-3xl min-h-[400px] bg-white/5 border-white/5">
-                                <h4 className="font-bold text-slate-300 mb-6 flex items-center gap-2 text-sm uppercase tracking-tighter">
-                                    <BarChart3 size={16} className="text-exxata-red" /> Distribuição de Frequência
-                                </h4>
-                                <div className="h-72">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={stats.bins}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                                            <XAxis dataKey="range" hide />
-                                            <YAxis hide />
-                                            <Tooltip
-                                                contentStyle={{ backgroundColor: '#1E293B', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
-                                                labelFormatter={(v) => formatBRL(v)}
-                                                formatter={(v: any) => [v, 'Ocorrências']}
-                                            />
-                                            <Bar dataKey="count" fill="#D51D07" radius={[4, 4, 0, 0]} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            </div>
-
-                            <div className="glass-card p-6 rounded-3xl min-h-[400px] bg-white/5 border-white/5">
-                                <h4 className="font-bold text-slate-300 mb-6 flex items-center gap-2 text-sm uppercase tracking-tighter">
-                                    <TrendingUp size={16} className="text-exxata-blue" /> Curva de Probabilidade Acumulada (S-Curve)
-                                </h4>
-                                <div className="h-72">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={stats.cdfData}>
-                                            <defs>
-                                                <linearGradient id="colorProb" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#4284D7" stopOpacity={0.3} />
-                                                    <stop offset="95%" stopColor="#4284D7" stopOpacity={0} />
-                                                </linearGradient>
-                                            </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                                            <XAxis
-                                                dataKey="value"
-                                                type="number"
-                                                domain={['dataMin', 'dataMax']}
-                                                hide
-                                            />
-                                            <YAxis tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} stroke="#64748B" fontSize={10} />
-                                            <Tooltip
-                                                contentStyle={{ backgroundColor: '#1E293B', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
-                                                labelFormatter={(v) => formatBRL(v)}
-                                                formatter={(v: any) => [`${(v * 100).toFixed(1)}%`, 'P-Value']}
-                                            />
-                                            <Area type="monotone" dataKey="probability" stroke="#4284D7" strokeWidth={3} fill="url(#colorProb)" connectNulls />
-
-                                            {/* Linhas de Referência Fiscais */}
-                                            <ReferenceLine x={stats.median} stroke="#94A3B8" strokeDasharray="3 3" strokeWidth={1.5}>
-                                                <Label value={`P50`} position="top" fill="#94A3B8" fontSize={10} />
-                                            </ReferenceLine>
-                                            <ReferenceLine x={stats.p95} stroke="#D51D07" strokeDasharray="3 3" strokeWidth={1.5}>
-                                                <Label value={`P95`} position="top" fill="#D51D07" fontSize={10} />
-                                            </ReferenceLine>
-                                            <ReferenceLine x={stats.mean} stroke="#4284D7" strokeDasharray="5 5" strokeWidth={2}>
-                                                <Label value={`EV`} position="bottom" fill="#4284D7" fontSize={10} />
-                                            </ReferenceLine>
-                                        </AreaChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={exportPDF}
+                                disabled={isExporting}
+                                className={`flex items-center gap-2 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${isExporting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'}`}
+                            >
+                                <FileText size={16} />
+                                {isExporting ? 'Gerando PDF...' : 'Baixar Relatório PDF'}
+                            </button>
+                            <button onClick={exportExcel} className="flex items-center gap-2 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-white/10 transition-all shadow-sm">
+                                <Download size={16} /> Exportar XLSX
+                            </button>
                         </div>
+                    </header>
 
-                        {/* Probability Bands */}
-                        <div className="space-y-4">
-                            <h4 className="font-bold text-slate-300 text-sm uppercase tracking-tighter flex items-center gap-2">
-                                <Target size={16} className="text-exxata-blue" /> Probabilidade por Faixa de Acordo {manualLimits.trim() ? '(Manual)' : '(Automática)'}
-                            </h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                                {stats.faixas.map((fx, i) => (
-                                    <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-[10px] font-bold text-slate-500 truncate pr-2">{fx.label}</span>
-                                            <span className="text-sm font-black text-exxata-blue">{(fx.pct * 100).toFixed(1)}%</span>
+                    {stats ? (
+                        <div className="space-y-6">
+                            {/* KPI Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {[
+                                    { label: 'E.V. (Média)', val: formatBRL(stats.mean), color: 'text-exxata-blue', bg: 'bg-exxata-blue/5', icon: Target },
+                                    { label: 'P50 (Mediana)', val: formatBRL(stats.median), color: 'text-slate-300', bg: 'bg-white/5', icon: TrendingUp },
+                                    { label: 'P95 (Cenário Alto)', val: formatBRL(stats.p95), color: 'text-exxata-red', bg: 'bg-exxata-red/5', icon: BarChart3 },
+                                    { label: 'Performance', val: `${stats.duration.toFixed(0)} ms`, color: 'text-slate-500', bg: 'bg-white/5', icon: Calculator },
+                                ].map((kpi, i) => (
+                                    <div key={i} className={`glass-card p-5 rounded-2xl ${kpi.bg} border-white/5`}>
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">{kpi.label}</span>
+                                            <kpi.icon size={14} className={kpi.color} />
                                         </div>
-                                        <div className="progress-container h-1.5 bg-white/5">
-                                            <div className="progress-bar" style={{ width: `${Math.max(fx.pct * 100, 1)}%` }}></div>
-                                        </div>
+                                        <div className={`text-xl font-manrope font-extrabold truncate ${kpi.color}`}>{kpi.val}</div>
                                     </div>
                                 ))}
                             </div>
-                        </div>
 
-                        <div className="bg-exxata-blue/10 border-l-4 border-exxata-blue p-4 rounded-r-2xl flex items-start gap-3 mt-8">
-                            <AlertCircle size={18} className="text-exxata-blue shrink-0 mt-0.5" />
-                            <p className="text-[11px] text-slate-400 leading-normal font-medium">
-                                <strong>Atenção Estratégica:</strong> Estes dados são gerados por um modelo matemático de simulação triangular.
-                                Antes de qualquer movimentação comercial, valide estes cenários com a diretoria técnica e financeira da Exxata.
-                            </p>
+                            {/* Charts Area */}
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                                <div className="glass-card p-6 rounded-3xl min-h-[400px] bg-white/5 border-white/5">
+                                    <h4 className="font-bold text-slate-300 mb-6 flex items-center gap-2 text-sm uppercase tracking-tighter">
+                                        <BarChart3 size={16} className="text-exxata-red" /> Distribuição de Frequência
+                                    </h4>
+                                    <div className="h-72">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={stats.bins}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                                <XAxis dataKey="range" hide />
+                                                <YAxis hide />
+                                                <Tooltip
+                                                    contentStyle={{ backgroundColor: '#1E293B', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                                                    labelFormatter={(v) => formatBRL(v)}
+                                                    formatter={(v: any) => [v, 'Ocorrências']}
+                                                />
+                                                <Bar dataKey="count" fill="#D51D07" radius={[4, 4, 0, 0]} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                <div className="glass-card p-6 rounded-3xl min-h-[400px] bg-white/5 border-white/5">
+                                    <h4 className="font-bold text-slate-300 mb-6 flex items-center gap-2 text-sm uppercase tracking-tighter">
+                                        <TrendingUp size={16} className="text-exxata-blue" /> Curva de Probabilidade Acumulada (S-Curve)
+                                    </h4>
+                                    <div className="h-72">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={stats.cdfData}>
+                                                <defs>
+                                                    <linearGradient id="colorProb" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="#4284D7" stopOpacity={0.3} />
+                                                        <stop offset="95%" stopColor="#4284D7" stopOpacity={0} />
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                                <XAxis
+                                                    dataKey="value"
+                                                    type="number"
+                                                    domain={['dataMin', 'dataMax']}
+                                                    hide
+                                                />
+                                                <YAxis tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} stroke="#64748B" fontSize={10} />
+                                                <Tooltip
+                                                    contentStyle={{ backgroundColor: '#1E293B', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                                                    labelFormatter={(v) => formatBRL(v)}
+                                                    formatter={(v: any) => [`${(v * 100).toFixed(1)}%`, 'P-Value']}
+                                                />
+                                                <Area type="monotone" dataKey="probability" stroke="#4284D7" strokeWidth={3} fill="url(#colorProb)" connectNulls />
+
+                                                {/* Linhas de Referência Fiscais */}
+                                                <ReferenceLine x={stats.median} stroke="#94A3B8" strokeDasharray="3 3" strokeWidth={1.5}>
+                                                    <Label value={`P50`} position="top" fill="#94A3B8" fontSize={10} />
+                                                </ReferenceLine>
+                                                <ReferenceLine x={stats.p95} stroke="#D51D07" strokeDasharray="3 3" strokeWidth={1.5}>
+                                                    <Label value={`P95`} position="top" fill="#D51D07" fontSize={10} />
+                                                </ReferenceLine>
+                                                <ReferenceLine x={stats.mean} stroke="#4284D7" strokeDasharray="5 5" strokeWidth={2}>
+                                                    <Label value={`EV`} position="bottom" fill="#4284D7" fontSize={10} />
+                                                </ReferenceLine>
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Probability Bands */}
+                            <div className="space-y-4">
+                                <h4 className="font-bold text-slate-300 text-sm uppercase tracking-tighter flex items-center gap-2">
+                                    <Target size={16} className="text-exxata-blue" /> Probabilidade por Faixa de Acordo {manualLimits.trim() ? '(Manual)' : '(Automática)'}
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                    {stats.faixas.map((fx, i) => (
+                                        <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-[10px] font-bold text-slate-500 truncate pr-2">{fx.label}</span>
+                                                <span className="text-sm font-black text-exxata-blue">{(fx.pct * 100).toFixed(1)}%</span>
+                                            </div>
+                                            <div className="progress-container h-1.5 bg-white/5">
+                                                <div className="progress-bar" style={{ width: `${Math.max(fx.pct * 100, 1)}%` }}></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="bg-exxata-blue/10 border-l-4 border-exxata-blue p-4 rounded-r-2xl flex items-start gap-3 mt-8">
+                                <AlertCircle size={18} className="text-exxata-blue shrink-0 mt-0.5" />
+                                <p className="text-[11px] text-slate-400 leading-normal font-medium">
+                                    <strong>Atenção Estratégica:</strong> Estes dados são gerados por um modelo matemático de simulação triangular.
+                                    Antes de qualquer movimentação comercial, valide estes cenários com a diretoria técnica e financeira da Exxata.
+                                </p>
+                            </div>
                         </div>
-                    </div>
-                ) : (
-                    <div className="flex flex-col items-center justify-center h-64 text-slate-700">
-                        <Calculator size={48} className="mb-4 animate-pulse opacity-20" />
-                        <p className="text-sm font-bold uppercase tracking-widest opacity-20">Processando Inteligência...</p>
-                    </div>
-                )}
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-64 text-slate-700">
+                            <Calculator size={48} className="mb-4 animate-pulse opacity-20" />
+                            <p className="text-sm font-bold uppercase tracking-widest opacity-20">Processando Inteligência...</p>
+                        </div>
+                    )}
+                </div>
             </main>
         </div>
     );
