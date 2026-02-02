@@ -130,12 +130,21 @@ const Dashboard: React.FC = () => {
             await new Promise(resolve => setTimeout(resolve, 300));
 
             const canvas = await html2canvas(dashboardRef.current, {
-                scale: 2,
+                scale: 1.5, // 1.5x é o equilíbrio ideal entre qualidade e peso
                 useCORS: true,
                 logging: false,
                 backgroundColor: '#020617',
-                windowWidth: dashboardRef.current.scrollWidth,
-                windowHeight: dashboardRef.current.scrollHeight
+                onclone: (clonedDoc) => {
+                    // html2canvas não suporta backdrop-filter e pode quebrar.
+                    // Removemos durante a clonagem para captura estável.
+                    const glassElements = clonedDoc.querySelectorAll('[class*="glass-card"]');
+                    glassElements.forEach((el) => {
+                        const style = (el as HTMLElement).style;
+                        style.backdropFilter = 'none';
+                        (style as any).webkitBackdropFilter = 'none';
+                        style.background = '#1E293B'; // Fundo sólido para PDF
+                    });
+                }
             });
 
             const imgData = canvas.toDataURL('image/png', 1.0);
@@ -148,7 +157,7 @@ const Dashboard: React.FC = () => {
             pdf.save(`exxata_relatorio_${new Date().getTime()}.pdf`);
         } catch (error) {
             console.error('PDF Export Error:', error);
-            alert('Erro ao gerar o PDF. Verifique se o navegador bloqueou o download.');
+            alert('Não foi possível gerar o PDF. Dica: Tente reduzir as configurações ou verifique se o navegador está atualizado.');
         } finally {
             setIsExporting(false);
         }
