@@ -44,8 +44,8 @@
 /* ESTILOS DE IMPRESSÃO (Ctrl+P e PDF) */
 @media print {
   @page {
-    size: auto;
-    margin: 0mm;
+    size: A4;
+    margin: 10mm;
   }
 
   html,
@@ -53,32 +53,54 @@
     height: auto !important;
     overflow: visible !important;
     background-color: #020617 !important;
+    color: #f8fafc !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  aside {
+  /* Esconder Sidebar, Botões e Ferramentas */
+  aside,
+  button,
+  .btn-primary,
+  [role="button"],
+  .sidebar-container {
     display: none !important;
-    /* Esconde a sidebar na impressão */
-  }
-
-  main {
-    width: 100% !important;
-    height: auto !important;
-    overflow: visible !important;
-    padding: 20px !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    padding: 0 !important;
     margin: 0 !important;
   }
 
-  .flex-col,
-  .flex-row {
+  /* Forçar o conteúdo principal a ocupar tudo */
+  main {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
     display: block !important;
+    background-color: #020617 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Remover travas de scroll do container do Dashboard */
+  .h-screen,
+  .overflow-hidden,
+  .overflow-y-auto {
+    height: auto !important;
+    overflow: visible !important;
+    max-height: none !important;
   }
 
   .glass-card {
     background-color: #1e293b !important;
+    border: 1px solid #334155 !important;
     box-shadow: none !important;
     break-inside: avoid;
+    page-break-inside: avoid;
     margin-bottom: 20px !important;
   }
 
@@ -87,12 +109,7 @@
     max-width: 100% !important;
     height: auto !important;
     break-inside: avoid;
-  }
-
-  .btn-primary,
-  button {
-    display: none !important;
-    /* Esconde botões no PDF final */
+    page-break-inside: avoid;
   }
 }
 
