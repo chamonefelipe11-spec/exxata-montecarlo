@@ -41,6 +41,61 @@
   }
 }
 
+/* ESTILOS DE IMPRESSÃO (Ctrl+P e PDF) */
+@media print {
+  @page {
+    size: auto;
+    margin: 0mm;
+  }
+
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background-color: #020617 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  aside {
+    display: none !important;
+    /* Esconde a sidebar na impressão */
+  }
+
+  main {
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 20px !important;
+    margin: 0 !important;
+  }
+
+  .flex-col,
+  .flex-row {
+    display: block !important;
+  }
+
+  .glass-card {
+    background-color: #1e293b !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    margin-bottom: 20px !important;
+  }
+
+  canvas,
+  .recharts-surface {
+    max-width: 100% !important;
+    height: auto !important;
+    break-inside: avoid;
+  }
+
+  .btn-primary,
+  button {
+    display: none !important;
+    /* Esconde botões no PDF final */
+  }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

@@ -29,8 +29,6 @@ import {
 import { runSimulation, formatBRL, parseBRL, calculateFaixas } from '../utils/simulation';
 import type { SimulationResults } from '../utils/simulation';
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 const Dashboard: React.FC = () => {
     const [itemName, setItemName] = useState('Negociação Alpha');
@@ -41,7 +39,6 @@ const Dashboard: React.FC = () => {
     const [manualLimits, setManualLimits] = useState('');
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [results, setResults] = useState<SimulationResults | null>(null);
-    const [isExporting, setIsExporting] = useState(false);
 
     const dashboardRef = useRef<HTMLDivElement>(null);
 
@@ -121,57 +118,10 @@ const Dashboard: React.FC = () => {
         XLSX.writeFile(wb, `exxata_monte_carlo_${new Date().getTime()}.xlsx`);
     };
 
-    const exportPDF = async () => {
-        if (!dashboardRef.current || isExporting) return;
-
-        setIsExporting(true);
-        try {
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            const canvas = await html2canvas(dashboardRef.current, {
-                scale: 1, // Escala 1 para máxima compatibilidade local e remota
-                useCORS: true,
-                backgroundColor: '#020617',
-                onclone: (clonedDoc) => {
-                    // Limpeza radical de CSS moderno que o html2canvas não suporta
-                    const style = clonedDoc.createElement('style');
-                    style.innerHTML = `
-                        * { 
-                            box-shadow: none !important; 
-                            text-shadow: none !important; 
-                            backdrop-filter: none !important; 
-                            -webkit-backdrop-filter: none !important;
-                            transition: none !important;
-                            animation: none !important;
-                            /* Forçar fallback de cores oklch para HEX */
-                            color: #f8fafc !important; 
-                        }
-                        .glass-card { 
-                            background: #1e293b !important; 
-                            border: 1px solid #334155 !important;
-                        }
-                        h2, h3, h4, .text-white { color: #ffffff !important; }
-                        .text-slate-400 { color: #94a3b8 !important; }
-                        .text-exxata-blue { color: #4284D7 !important; }
-                        .bg-exxata-red { background-color: #D51D07 !important; }
-                    `;
-                    clonedDoc.head.appendChild(style);
-                }
-            });
-
-            const imgData = canvas.toDataURL('image/jpeg', 0.9);
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pageWidth = pdf.internal.pageSize.getWidth();
-            const imgHeight = (canvas.height * pageWidth) / canvas.width;
-
-            pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, imgHeight, undefined, 'FAST');
-            pdf.save(`exxata_relatorio_${new Date().getTime()}.pdf`);
-        } catch (error: any) {
-            console.error('PDF Error:', error);
-            alert('Erro ao gerar PDF: O navegador está tendo dificuldade em processar os gráficos. Dica: Tente usar o botão de imprimir do sistema (Ctrl+P) e escolha "Salvar como PDF".');
-        } finally {
-            setIsExporting(false);
-        }
+    const exportPDF = () => {
+        // Usamos a impressão nativa do navegador (@media print no index.css)
+        // Isso resolve todos os problemas de oklch, memória e corte de página.
+        window.print();
     };
 
     return (
@@ -288,11 +238,10 @@ const Dashboard: React.FC = () => {
                         <div className="flex gap-2">
                             <button
                                 onClick={exportPDF}
-                                disabled={isExporting}
-                                className={`flex items-center gap-2 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${isExporting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'}`}
+                                className="flex items-center gap-2 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm hover:bg-white/10"
                             >
                                 <FileText size={16} />
-                                {isExporting ? 'Gerando PDF...' : 'Baixar Relatório PDF'}
+                                Baixar Relatório PDF
                             </button>
                             <button onClick={exportExcel} className="flex items-center gap-2 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-white/10 transition-all shadow-sm">
                                 <Download size={16} /> Exportar XLSX
